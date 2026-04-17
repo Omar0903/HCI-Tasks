@@ -1,3 +1,4 @@
+
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import butter, filtfilt, find_peaks
@@ -207,3 +208,104 @@ if len(firstDctResults) >= 2:
     plt.title(fileNamesForDct[1])
 
 plt.show()
+
+
+
+testFile = "Test signal.txt"
+
+
+with open(testFile) as f:
+    lines = f.readlines()
+
+
+testSignal = []
+for i in range(len(lines) - 1):
+    testSignal.append(float(lines[i + 1].split()[0]))
+
+testSignal = np.array(testSignal[:1000])
+
+fs = 250.0
+
+filteredTest = ButterBandpassFilter(testSignal, 1, 40, fs, 2)
+
+arrX = np.arange(len(filteredTest))
+arrY = filteredTest
+
+dx = np.diff(arrX)
+dyDiff = np.diff(arrY)
+
+dy = np.zeros(len(arrY))
+dy[:-1] = dyDiff / dx
+
+result = np.array([dy[i] ** 2 for i in range(len(dy))])
+
+winSize = round(0.03 * fs)
+sumVal = 0
+
+for j in range(winSize):
+    sumVal += result[j] / winSize
+    result[j] = sumVal
+
+for i in range(winSize, len(result)):
+    sumVal += result[i] / winSize
+    sumVal -= result[i - winSize] / winSize
+    result[i] = sumVal
+
+threshold = 60000
+thresholdPeaks, _ = find_peaks(result, height=threshold)
+
+p = thresholdPeaks[0]
+
+searchWindow = round(0.1 * fs)
+startR = max(0, p - searchWindow)
+endR = min(len(filteredTest), p + searchWindow)
+
+trueR = startR + np.argmax(filteredTest[startR:endR])
+
+trueQ = trueR
+while trueQ > 0 and filteredTest[trueQ - 1] < filteredTest[trueQ]:
+    trueQ -= 1
+
+trueS = trueR
+while trueS < len(filteredTest) - 1 and filteredTest[trueS + 1] < filteredTest[trueS]:
+    trueS += 1
+
+segmentStart = max(0, trueR - round(0.2 * fs))
+segmentEnd = min(len(filteredTest), trueR + round(0.2 * fs))
+testSegment = filteredTest[segmentStart:segmentEnd]
+
+testMean, testStd, testEnergy = ExtractDwtFeatures(testSegment)
+
+print("\nTEST FEATURES")
+print("="*50)
+print("Mean   :", testMean)
+print("Std    :", testStd)
+print("Energy :", testEnergy)
+
+bestMatch = None
+minDiff = float('inf')
+
+resultsTable = []
+
+for item in globalFeatureMap:
+
+    diff = abs(testMean - item["dwtMean"])
+
+    resultsTable.append((item["signalName"], item["dwtMean"], diff))
+
+    if diff < minDiff:
+        minDiff = diff
+        bestMatch = item["signalName"]
+
+resultsTable.sort(key=lambda x: x[2])
+
+print("\nRESULTS")
+print("-"*50)
+for name, meanVal, diff in resultsTable:
+    print(f"{name:20} | {meanVal:12.6f} | {diff:.6f}")
+
+print("\nFINAL RESULT")
+print("="*50)
+print("Best Match:", bestMatch)
+print("Min Diff  :", minDiff)
+print("="*50)
